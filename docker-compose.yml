@@ -1,0 +1,91 @@
+services:
+  # Redis cache service
+  redis:
+    image: redis:7-alpine
+    container_name: packcalc-redis
+    ports:
+      - "6380:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - packcalc-network
+    volumes:
+      - redis-data:/data
+
+  # Main application service (Web UI + API)
+  app:
+    image: packcalc:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: packcalc-app
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - DB_PATH=/app/data/packcalc.db
+      - REDIS_ADDR=redis:6379
+      - REDIS_ENABLED=true
+    volumes:
+      # Persist database across container restarts
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - packcalc-network
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # API-only service (optional, for separate API deployment)
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: packcalc-api
+    ports:
+      - "8081:8080"
+    environment:
+      - PORT=8080
+      - DB_PATH=/app/data/packcalc.db
+      - REDIS_ADDR=redis:6379
+      - REDIS_ENABLED=true
+    volumes:
+      - ./data:/app/data
+    command: ["./packcalc", "api", "--port", "8080"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - packcalc-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    profiles:
+      - api-only
+
+networks:
+  packcalc-network:
+    driver: bridge
+
+volumes:
+  data:
+    driver: local
+  redis-data:
+    driver: local
+

@@ -1,0 +1,34 @@
+# Binaries
+bin/
+packcalc
+*.exe
+
+# Data
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+!README.md
+
+# Test files
+*_test.go
+coverage.out
+coverage.html
+
+# Build artifacts
+vendor/
+

@@ -1,0 +1,56 @@
+# Binaries
+bin/
+packcalc
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# Database files
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Documentation (keep only README.md)
+*.md
+!README.md
+
+# Coverage reports
+coverage.html
+*.out
+
+# Test scripts
+*.sh
+
+# Assets and PDFs
+*.jpeg
+*.jpg
+*.png
+*.pdf
+

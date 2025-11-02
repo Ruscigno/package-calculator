@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pack Calculator - Order Optimization</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📦 Pack Calculator</h1>
+            <p class="subtitle">Optimize your order fulfillment with minimum waste</p>
+        </header>
+
+        <main>
+            <div class="card">
+                <h2>Calculate Packs</h2>
+                
+                <form id="calc-form">
+                    <div class="form-group">
+                        <label for="items">Order Quantity</label>
+                        <input
+                            type="number"
+                            id="items"
+                            name="items"
+                            placeholder="Enter quantity (e.g., 251)"
+                            min="1"
+                            required
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label for="pack_sizes">Pack Sizes (comma-separated)</label>
+                        <input
+                            type="text"
+                            id="pack_sizes"
+                            name="pack_sizes"
+                            placeholder="Leave empty for default: 250, 500, 1000, 2000, 5000"
+                        >
+                        <small>Optional: Leave empty to use configured pack sizes</small>
+                    </div>
+
+                    <div class="presets">
+                        <button type="button" class="btn-preset" onclick="loadPreset('standard')" title="Standard pack sizes (250, 500, 1000, 2000, 5000) with 251 items">
+                            Standard
+                            <small>Default sizes: 251 items</small>
+                        </button>
+                        <button type="button" class="btn-preset" onclick="loadPreset('edge')" title="Edge case with prime number pack sizes (23, 31, 53) and large quantity (500,000 items)">
+                            Edge Case
+                            <small>Prime sizes: 500K items</small>
+                        </button>
+                        <button type="button" class="btn-preset" onclick="loadPreset('small')" title="Small pack sizes (10, 25, 50, 100) with 137 items">
+                            Small Packs
+                            <small>Smaller sizes: 137 items</small>
+                        </button>
+                    </div>
+
+                    <button type="button" class="btn-primary" onclick="calculatePacks()">Calculate</button>
+                </form>
+            </div>
+
+            <div id="result" class="result-container">
+                <!-- Results will be displayed here -->
+            </div>
+
+            <div class="card history-card">
+                <div class="history-header">
+                    <h2>Recent Calculations</h2>
+                    <button 
+                        class="btn-secondary btn-small" 
+                        hx-get="/api/history" 
+                        hx-target="#history" 
+                        hx-swap="innerHTML"
+                    >
+                        Refresh
+                    </button>
+                </div>
+                <div id="history" hx-get="/api/history" hx-trigger="load" hx-swap="innerHTML">
+                    <!-- History will be loaded here -->
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Built with Go + HTMX | <a href="/api/health" target="_blank">Health Check</a></p>
+        </footer>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+    
+    <script>
+        // Calculate packs function
+        async function calculatePacks() {
+            const form = document.getElementById('calc-form');
+            const items = parseInt(form.items.value);
+            const packSizesInput = form.pack_sizes.value.trim();
+
+            if (isNaN(items) || items <= 0) {
+                alert('Please enter a valid quantity greater than 0');
+                return;
+            }
+
+            let packSizes = [];
+            if (packSizesInput) {
+                packSizes = packSizesInput.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+            }
+
+            // Build request body
+            const body = { items: items };
+            if (packSizes.length > 0) {
+                body.pack_sizes = packSizes;
+            }
+
+            try {
+                const response = await fetch('/api/calculate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    renderResult(data);
+                    // Refresh history
+                    loadHistory();
+                } else {
+                    renderResult(data);
+                }
+            } catch (e) {
+                console.error('Error calculating packs:', e);
+                document.getElementById('result').innerHTML = `
+                    <div class="card error">
+                        <h3>❌ Error</h3>
+                        <p>Failed to calculate packs. Please try again.</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Load history function
+        async function loadHistory() {
+            try {
+                const response = await fetch('/api/history');
+                const data = await response.json();
+                renderHistory(data);
+            } catch (e) {
+                console.error('Error loading history:', e);
+            }
+        }
+
+        // Handle HTMX history loading
+        document.body.addEventListener('htmx:afterSwap', function(evt) {
+            if (evt.detail.target.id === 'history') {
+                try {
+                    const response = JSON.parse(evt.detail.xhr.response);
+                    renderHistory(response);
+                } catch (e) {
+                    console.error('Error parsing history:', e);
+                }
+            }
+        });
+
+        function renderResult(data) {
+            const resultDiv = document.getElementById('result');
+            
+            if (data.error) {
+                resultDiv.innerHTML = `
+                    <div class="card error">
+                        <h3>❌ Error</h3>
+                        <p>${data.error}</p>
+                        ${data.message ? `<p><small>${data.message}</small></p>` : ''}
+                    </div>
+                `;
+                return;
+            }
+
+            const efficiency = ((1 - data.waste / data.total_items) * 100).toFixed(1);
+
+            // Cache status badge
+            const cacheStatus = data.cached
+                ? `<span class="badge badge-success" title="Result retrieved from cache (TTL: ${data.cache_ttl || 'N/A'}, Hits: ${data.cache_hit_count || 0})">⚡ Cached</span>`
+                : `<span class="badge badge-info" title="Freshly calculated and cached">🔄 Fresh</span>`;
+
+            let packsHTML = '';
+            for (const [size, count] of Object.entries(data.result)) {
+                const total = size * count;
+                packsHTML += `
+                    <div class="pack-item">
+                        <div class="pack-size">Pack Size: ${size}</div>
+                        <div class="pack-count">× ${count}</div>
+                        <div class="pack-total">= ${total} items</div>
+                    </div>
+                `;
+            }
+
+            resultDiv.innerHTML = `
+                <div class="card success">
+                    <div class="result-header">
+                        <h3>✅ Calculation Result</h3>
+                        ${cacheStatus}
+                    </div>
+
+                    <div class="summary">
+                        <div class="summary-item">
+                            <span class="label">Order Quantity:</span>
+                            <span class="value">${data.items}</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="label">Total Items:</span>
+                            <span class="value">${data.total_items}</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="label">Total Packs:</span>
+                            <span class="value">${data.total_packs}</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="label">Waste:</span>
+                            <span class="value">${data.waste}</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="label">Efficiency:</span>
+                            <span class="value">${efficiency}%</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="label">Calculation Time:</span>
+                            <span class="value">${data.calculation_time_ms}ms</span>
+                        </div>
+                        ${data.cached ? `
+                        <div class="summary-item">
+                            <span class="label">Cache TTL:</span>
+                            <span class="value">${data.cache_ttl || 'N/A'}</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="label">Cache Hits:</span>
+                            <span class="value">${data.cache_hit_count || 0}</span>
+                        </div>
+                        ` : ''}
+                    </div>
+
+                    <h4>Pack Breakdown</h4>
+                    <div class="packs-list">
+                        ${packsHTML}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderHistory(data) {
+            const historyDiv = document.getElementById('history');
+            
+            if (!data.history || data.history.length === 0) {
+                historyDiv.innerHTML = '<p class="empty">No calculations yet</p>';
+                return;
+            }
+
+            let html = '<div class="history-list">';
+            data.history.forEach(entry => {
+                const date = new Date(entry.timestamp).toLocaleString();
+                const packsStr = Object.entries(entry.result)
+                    .map(([size, count]) => `${size}×${count}`)
+                    .join(', ');
+                
+                html += `
+                    <div class="history-item">
+                        <div class="history-main">
+                            <strong>${entry.items} items</strong> → ${entry.total_items} items (${entry.total_packs} packs)
+                        </div>
+                        <div class="history-detail">
+                            ${packsStr}
+                        </div>
+                        <div class="history-time">${date}</div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            
+            historyDiv.innerHTML = html;
+        }
+    </script>
+</body>
+</html>
+
